@@ -281,22 +281,44 @@ Saving Dask Models
 
 After training with Dask, you have several options for saving a fitted model.
 
-.. warning::
+**Option 1: pickle the Dask estimator**
 
-    Loading models with ``pickle``, ``cloudpickle``, or ``joblib`` is not secure.
-    A malicious actor could construct a ``.pkl`` or ``.joblib`` file that, when loaded,
-    will execute arbitrary code. This can lead to a full compromise of the machine
-    running the code.
+LightGBM's Dask estimators can be pickled directly with ``cloudpickle``, ``joblib``, or ``pickle``.
 
-    It is recommended to instead use ``.to_local()`` to convert a Dask estimator
-    to its scikit-learn compatible equivalent and then save that object, or to
-    save the underlying Booster object with ``.save_model()``.
+.. code:: python
 
-**Option 1: convert to a scikit-learn estimator**
+  import dask.array as da
+  import pickle
+  import lightgbm as lgb
+  from distributed import Client, LocalCluster
 
-The estimators available from ``lightgbm.dask`` can be converted to an instance of the equivalent class from ``lightgbm.sklearn`` using ``.to_local()``. The resulting scikit-learn-compatible estimator can then be saved using a library like ``joblib``.
+  cluster = LocalCluster(n_workers=2)
+  client = Client(cluster)
 
-Choosing this option allows you to use Dask for training but avoid depending on any Dask libraries at scoring time.
+  X = da.random.random((1000, 10), (500, 10))
+  y = da.random.random((1000,), (500,))
+
+  dask_model = lgb.DaskLGBMRegressor()
+  dask_model.fit(X, y)
+
+  with open("dask-model.pkl", "wb") as f:
+      pickle.dump(dask_model, f)
+
+A model saved this way can then later be loaded with whichever serialization library you used to save it.
+
+.. code:: python
+
+  import pickle
+  with open("dask-model.pkl", "rb") as f:
+      dask_model = pickle.load(f)
+
+.. note::
+
+  If you explicitly set a Dask client (see `Using a Specific Dask Client <#using-a-specific-dask-client>`__), it will not be saved when pickling the estimator. When loading a Dask estimator from disk, if you need to use a specific client you can add it after loading with ``dask_model.set_params(client=client)``.
+
+**Option 2: pickle the sklearn estimator**
+
+The estimators available from ``lightgbm.dask`` can be converted to an instance of the equivalent class from ``lightgbm.sklearn``. Choosing this option allows you to use Dask for training but avoid depending on any Dask libraries at scoring time.
 
 .. code:: python
 
@@ -330,7 +352,7 @@ A model saved this way can then later be loaded with whichever serialization lib
 
   sklearn_model = joblib.load("sklearn-model.joblib")
 
-**Option 2: save the Booster object**
+**Option 3: save the LightGBM Booster**
 
 The lowest-level model object in LightGBM is the ``lightgbm.Booster``. After training, you can extract a Booster from the Dask estimator.
 
@@ -352,8 +374,9 @@ The lowest-level model object in LightGBM is the ``lightgbm.Booster``. After tra
   # get underlying Booster object
   bst = dask_model.booster_
 
-From this point forward, you can use any of the following methods to save the Booster:
+From the point forward, you can use any of the following methods to save the Booster:
 
+* serialize with ``cloudpickle``, ``joblib``, or ``pickle``
 * ``bst.dump_model()``: dump the model to a dictionary which could be written out as JSON
 * ``bst.model_to_string()``: dump the model to a string in memory
 * ``bst.save_model()``: write the output of ``bst.model_to_string()`` to a text file
